@@ -1,4 +1,6 @@
-import sys, unittest
+import sys, unittest, coverage, io
+
+from coverageutilities import called_coverage_data
 
 MAXTESTS = 1000000000
 
@@ -8,6 +10,7 @@ class TestGetter:
         
     def get_num( self, num_to_get): 
         self.count = 0
+        self.result = None
         def _get_test_numbered(t_suite, count):
             tests = []
             for t in t_suite:
@@ -17,14 +20,15 @@ class TestGetter:
                     if self.count == num_to_get:
                         tests.append(t)
                         self.count = MAXTESTS
-                        return unittest.TestSuite(tests)
+                        self.result = unittest.TestSuite(tests)
+                        return self.result
                     else:
                         self.count += 1 
                 else:
                     tests.append(_get_test_numbered(t, self.count))
             return unittest.TestSuite(tests)
-        return unittest.TestSuite(_get_test_numbered( self.test_suite , 0) )
-
+        _get_test_numbered( self.test_suite , 0) 
+        return self.result
 
 if __name__ == '__main__':
     import argparse
@@ -34,17 +38,28 @@ if __name__ == '__main__':
                        help='unittest verbosity')
     known_args, other_args = parser.parse_known_args()
     
-    runner = unittest.TextTestRunner(verbosity = known_args.verbose)
+    test_runner_output = io.StringIO()
+    runner = unittest.TextTestRunner(stream=test_runner_output, verbosity = known_args.verbose)
     complete_test_suite = unittest.loader.defaultTestLoader.discover('.', pattern='*.py')
     tg = TestGetter(complete_test_suite)
     result = runner.run( tg.get_num(num_to_get = 1) )
-
-    for i in range(MAXTESTS):
-        result = runner.run( tg.get_num(num_to_get = i) )
+    
+    i = 0
+    test_suite_with_a_single_test = tg.get_num(num_to_get = 0)
+    while test_suite_with_a_single_test is not None:
+        cov = coverage.coverage()
+        cov.start()
+        result = runner.run( test_suite_with_a_single_test )
+        cov.stop ()
+        cov_data = called_coverage_data(cov)
+        #print (cov_data) 
         if not result.wasSuccessful():
+            print(test_runner_output.getvalue())
             print ("\n----------------\nError\nTest num. %d  fails" % i )
             sys.exit(-1) 
-        if result.testsRun == 0:
-            print ("\n----------------\nOK\nRan %d tests in single mode" % i )
-            sys.exit(-1)
+        i += 1
+        test_suite_with_a_single_test = tg.get_num(num_to_get = i)
+    
+    print ("\n----------------\nOK\nRan %d tests in single mode" % i )
+    sys.exit(-1)
 
